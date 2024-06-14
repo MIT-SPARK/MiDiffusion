@@ -1,0 +1,85 @@
+data:
+    dataset_type: "cached_threedfront"
+    encoding_type: "cached_diffusion_cosin_angle_wocm"
+    dataset_directory: "diningroom"
+    annotation_file: "diningroom_threed_front_splits.csv"
+    augmentations: ["fixed_rotations"]
+    train_stats: "dataset_stats.txt"
+    room_layout_size: "64,64"
+
+network:
+    type: "diffusion_scene_layout_mixed"
+
+    # encoding dim
+    sample_num_points: 21 # max_length 
+    angle_dim: 2 
+
+    # room mask condition
+    room_mask_condition: true
+    room_latent_dim: 64
+    
+    # position condition
+    learnable_embedding: true
+    position_condition: true
+    position_emb_dim: 64
+
+    # diffusion config
+    time_num: 1000
+    diffusion_semantic_kwargs:
+        att_1: 0.99999 
+        att_T: 0.000009
+        ctt_1: 0.000009
+        ctt_T: 0.99999
+        model_output_type: 'x0'
+        mask_weight: 1
+        auxiliary_loss_weight: 0.0005
+        adaptive_auxiliary_loss: True
+    diffusion_geometric_kwargs:
+        schedule_type: 'linear'
+        beta_start: 0.0001
+        beta_end: 0.02
+        loss_type: 'mse'
+        model_mean_type: 'eps'
+        model_var_type: 'fixedsmall'
+
+    # denoising net
+    net_type: "transformer"
+    net_kwargs:
+        seperate_all: True
+        n_layer: 8
+        n_embd: 512
+        n_head: 8
+        dim_feedforward: 2048
+        dropout: 0.1
+        activate: 'GELU'
+        timestep_type: 'adalayernorm_abs'
+        mlp_type: 'fc'
+
+feature_extractor:
+    name: "pointnet_simple"
+    feat_units: [4, 64, 64, 512, 64]
+
+training:
+    splits: ["train", "val"]
+    epochs: 100000
+    batch_size: 128
+    save_frequency: 2000
+    max_grad_norm: 10
+    # optimizer
+    optimizer: Adam
+    weight_decay: 0.0
+    # schedule
+    schedule: 'step'
+    lr: 0.0002
+    lr_step: 15000
+    lr_decay: 0.5
+
+validation:
+    splits: ["test"]
+    frequency: 100
+    save_frequency: 1000
+    batch_size: 128
+
+logger:
+    type: "wandb"
+    project: "MiDiffusion"
