@@ -122,8 +122,6 @@ def main(argv):
     config = load_config(args.config_file)
     if "_eval" not in config["data"]["encoding_type"] and args.experiment == "synthesis":
         config["data"]["encoding_type"] += "_eval"
-    if "text" in config["data"]["encoding_type"] and "textfix" not in config["data"]["encoding_type"]:
-        config["data"]["encoding_type"] = config["data"]["encoding_type"].replace("text", "textfix")
     if not os.path.exists(path_to_config) or \
         not os.path.samefile(args.config_file, path_to_config):
         shutil.copyfile(args.config_file, path_to_config)

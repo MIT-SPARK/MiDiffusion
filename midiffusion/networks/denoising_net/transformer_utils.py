@@ -130,7 +130,7 @@ class Block(nn.Module):
         elif "adainnorm" in timestep_type:
             self.ln1 = AdaInsNorm(n_embd, num_timesteps, timestep_type)
         else:
-            raise NotImplemented("timestep_type wrong")
+            raise ValueError(f"timestep_type={timestep_type} not valid.")
         
         if attn_type == 'self':
             self.attn = SelfAttention(
@@ -155,22 +155,22 @@ class Block(nn.Module):
             if 'adalayernorm' in timestep_type:
                 self.ln1_1 = AdaLayerNorm(n_embd, num_timesteps, timestep_type)
             else:
-                raise NotImplemented("timestep_type wrong")
+                raise ValueError(f"timestep_type={timestep_type} not valid.")
             self.ln2 = nn.LayerNorm(n_embd)
         else:
-            raise NotImplemented("attn_type error")
+            raise ValueError(f"attn_type={attn_type} not valid.")
         
         assert activate in ['GELU', 'GELU2']
         act = nn.GELU() if activate == 'GELU' else GELU2()
-        if mlp_type == 'conv_mlp':
-            raise NotImplemented
-        else:
+        if mlp_type == 'fc':
             self.mlp = nn.Sequential(
                 nn.Linear(n_embd, dim_feedforward),
                 act,
                 nn.Linear(dim_feedforward, n_embd),
                 nn.Dropout(dropout),
             )
+        else:
+            raise NotImplemented
 
     def forward(self, x, timestep, cond_output=None, mask=None):    
         if self.attn_type == "self":
@@ -206,14 +206,19 @@ class DenoiseTransformer(nn.Module):
         super().__init__()
 
         # transformer backbone
-        self.tf_blocks = nn.Sequential(*[Block(
-            n_embd=n_embd, n_head=n_head, dim_feedforward=dim_feedforward,
-            dropout=dropout, activate=activate,
-            num_timesteps=num_timesteps, timestep_type=timestep_type,
-            attn_type='selfcross', cond_emb_dim=context_dim,
-            mlp_type=mlp_type,
-        ) for n in range(n_layer)])
-
+        if context_dim == 0:
+            self.tf_blocks = nn.Sequential(*[Block(
+                n_embd, n_head, dim_feedforward, dropout, activate,
+                num_timesteps, timestep_type, mlp_type=mlp_type,
+                attn_type='self',
+            ) for _ in range(n_layer)])
+        else:
+            self.tf_blocks = nn.Sequential(*[Block(
+                n_embd, n_head, dim_feedforward, dropout, activate,
+                num_timesteps, timestep_type, mlp_type=mlp_type,
+                attn_type='selfcross', cond_emb_dim=context_dim,
+            ) for _ in range(n_layer)])
+    
     @staticmethod
     def _encoder_mlp(hidden_size, input_size):
         mlp_layers = [

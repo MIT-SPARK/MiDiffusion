@@ -214,6 +214,7 @@ def main(argv):
 
     # Do the training
     epochs = config["training"].get("epochs", 150)
+    max_grad_norm = config["training"].get("max_grad_norm", None)
     save_every = config["training"].get("save_frequency", 10)
     val_every = config["validation"].get("frequency", 100)
 
@@ -231,7 +232,7 @@ def main(argv):
             for k, v in sample.items():
                 if not isinstance(v, list):
                     sample[k] = v.to(device)
-            batch_loss = train_on_batch(network, optimizer, sample, config)
+            batch_loss = train_on_batch(network, optimizer, sample, max_grad_norm)
             StatsLogger.instance().print_progress(i, b+1, batch_loss)
 
         if (i % save_every) == 0:
@@ -247,7 +248,7 @@ def main(argv):
                 for k, v in sample.items():
                     if not isinstance(v, list):
                         sample[k] = v.to(device)
-                batch_loss = validate_on_batch(network, sample, config)
+                batch_loss = validate_on_batch(network, sample)
                 StatsLogger.instance().print_progress(-1, b+1, batch_loss)
                 val_loss_total += batch_loss
             StatsLogger.instance().clear()

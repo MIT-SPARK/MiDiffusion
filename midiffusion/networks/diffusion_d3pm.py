@@ -267,7 +267,7 @@ class MaskAndReplaceDiffusion(BaseDiffusion):
 
     def q_sample(self, log_x_start, t, no_mask=False):
         """
-        sample from q(x_t | x_0) and return log probability
+        sample from q(x_t | x_0)
         """
         log_EV_qxt_x0 = self.q_pred(log_x_start, t)
         log_sample = self.log_sample_categorical(log_EV_qxt_x0, no_mask)

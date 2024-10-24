@@ -103,7 +103,7 @@ class MixedDenoiseTransformer(DenoiseTransformer):
                 else:
                     x_geo += x_objfeat
         else:
-            x_geo = self.init_mlp(x)
+            x_geo = self.init_mlp(x_geometry)
         
         if self.concate_features:
             x = torch.cat([x_class, x_geo], dim=2).contiguous()

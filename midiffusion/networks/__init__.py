@@ -40,7 +40,7 @@ def optimizer_factory(config, parameters):
         raise NotImplementedError()
 
 
-def train_on_batch(model, optimizer, sample_params, config):
+def train_on_batch(model, optimizer, sample_params, max_grad_norm=None):
     # Make sure that everything has the correct size
     optimizer.zero_grad()
     # Compute the loss
@@ -50,9 +50,8 @@ def train_on_batch(model, optimizer, sample_params, config):
     # Do the backpropagation
     loss.backward()
     # Compute model norm
-    grad_norm = clip_grad_norm_(
-        model.parameters(), 
-        config["training"]["max_grad_norm"])
+    if max_grad_norm is not None:
+        grad_norm = clip_grad_norm_(model.parameters(), max_norm=max_grad_norm)
     StatsLogger.instance()["gradnorm"].value = grad_norm.item()
     # log learning rate
     StatsLogger.instance()["lr"].value = optimizer.param_groups[0]['lr']
@@ -63,7 +62,7 @@ def train_on_batch(model, optimizer, sample_params, config):
 
 
 @torch.no_grad()
-def validate_on_batch(model, sample_params, config):
+def validate_on_batch(model, sample_params):
     # Compute the loss
     loss, loss_dict = model.get_loss(sample_params)
     for k, v in loss_dict.items():
@@ -71,11 +70,7 @@ def validate_on_batch(model, sample_params, config):
     return loss.item()
 
 
-def build_network(
-    n_object_types,
-    config,
-    weight_file=None,
-    device="cpu"):
+def build_network(n_object_types, config, weight_file=None, device="cpu"):
     network_type = config["network"]["type"]
 
     feature_extractor = get_feature_extractor(
@@ -114,15 +109,15 @@ def build_network(
 # set up learning scheduler
 class LearningRateSchedule:
     def get_learning_rate(self, epoch):
-        pass
+        raise NotImplementedError()
 
 
 class StepLearningRateSchedule(LearningRateSchedule):
     def __init__(self, specs):
         print(specs)
-        self.initial = specs['initial']
-        self.interval = specs['interval']
-        self.factor = specs['factor']
+        self.initial = specs["initial"]
+        self.interval = specs["interval"]
+        self.factor = specs["factor"]
 
     def get_learning_rate(self, epoch):
         return self.initial * (self.factor ** (epoch // self.interval))
@@ -131,10 +126,10 @@ class StepLearningRateSchedule(LearningRateSchedule):
 class LambdaLearningRateSchedule(LearningRateSchedule):
     def __init__(self, specs):
         print(specs)
-        self.start_epoch =  specs["start_epoch"]
-        self.end_epoch =  specs["end_epoch"]
-        self.start_lr =  specs["start_lr"]
-        self.end_lr   =  specs["end_lr"]
+        self.start_epoch = specs["start_epoch"]
+        self.end_epoch = specs["end_epoch"]
+        self.start_lr = specs["start_lr"]
+        self.end_lr = specs["end_lr"]
 
     def lr_func(self, epoch):
         if epoch <= self.start_epoch:
@@ -155,10 +150,10 @@ class LambdaLearningRateSchedule(LearningRateSchedule):
 class WarmupCosineLearningRateSchedule(LearningRateSchedule):
     def __init__(self, specs):
         print(specs)
-        self.warmup_epochs =  specs["warmup_epochs"]
-        self.total_epochs  =  specs["total_epochs"]
-        self.lr            =  specs["lr"]
-        self.min_lr        =  specs["min_lr"]
+        self.warmup_epochs = specs["warmup_epochs"]
+        self.total_epochs = specs["total_epochs"]
+        self.lr = specs["lr"]
+        self.min_lr = specs["min_lr"]
 
     def get_learning_rate(self, epoch):
         if epoch <= self.warmup_epochs:
@@ -187,18 +182,18 @@ def schedule_factory(config):
     if schedule == "step" or schedule == "Step":
         lr_schedule = StepLearningRateSchedule({
                 "type": "step",
-                "initial":  config.get("lr", 1e-3),
+                "initial" : config.get("lr", 1e-3),
                 "interval": config.get("lr_step", 100),
-                "factor":   config.get("lr_decay", 0.1),
+                "factor"  : config.get("lr_decay", 0.1),
             },)
 
     elif schedule == "lambda" or schedule == "Lambda":
         lr_schedule = LambdaLearningRateSchedule({
                 "type": "lambda",
                 "start_epoch": config.get("start_epoch", 1000),
-                "end_epoch": config.get("end_epoch", 1000),
-                "start_lr": config.get("start_lr", 0.002),
-                "end_lr": config.get("end_lr", 0.002),
+                "end_epoch"  : config.get("end_epoch", 1000),
+                "start_lr"   : config.get("start_lr", 0.002),
+                "end_lr"     : config.get("end_lr", 0.002),
             },)
 
     elif schedule == "warmupcosine" or schedule == "WarmupCosine":

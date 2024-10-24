@@ -8,32 +8,7 @@ from midiffusion.networks.diffusion_scene_layout_mixed import DiffusionSceneLayo
 from midiffusion.datasets.threed_front_encoding import Diffusion
 
 
-def generate_layouts(network:DiffusionSceneLayout_DDPM, encoded_dataset:Diffusion, 
-                     config, num_syn_scenes, sampling_rule="random", 
-                     experiment="synthesis", num_known_objects=0, 
-                     batch_size=16, device="cpu"):
-    """Generate speicifed number of object layouts and also return a list of scene 
-    indices corresponding to the floor plan. Each layout is a 2D array where each 
-    row contain the concatenated object attributes.
-    (Note: this code assumes "end" is the last object label, and, if used, 
-    "start" is the second to last label.)"""
-    
-    # Sample floor layout
-    if sampling_rule == "random":
-        sampled_indices = np.random.choice(len(encoded_dataset), num_syn_scenes).tolist()
-    elif sampling_rule == "uniform":
-        sampled_indices = np.arange(len(encoded_dataset)).tolist() * \
-            (num_syn_scenes // len(encoded_dataset))
-        sampled_indices += \
-            np.random.choice(len(encoded_dataset), 
-                             num_syn_scenes - len(sampled_indices)).tolist()
-    else:
-        raise NotImplemented
-    
-    # network params
-    with_room_mask = config["network"].get("room_mask_condition", True)
-
-    # experiment setup
+def get_feature_mask(network, experiment, num_known_objects, device):
     if experiment == "synthesis":
         feature_mask = None
         print("Experiment: scene synthesis.")
@@ -74,7 +49,35 @@ def generate_layouts(network:DiffusionSceneLayout_DDPM, encoded_dataset:Diffusio
               .format(num_known_objects))
     else:
         raise NotImplemented
+    return feature_mask
+
+
+def generate_layouts(network:DiffusionSceneLayout_DDPM, encoded_dataset:Diffusion, 
+                     config, num_syn_scenes, sampling_rule="random", 
+                     experiment="synthesis", num_known_objects=0, 
+                     batch_size=16, device="cpu"):
+    """Generate speicifed number of object layouts and also return a list of scene 
+    indices corresponding to the floor plan. Each layout is a 2D array where each 
+    row contain the concatenated object attributes.
+    (Note: this code assumes "end" is the last object label, and, if used, 
+    "start" is the second to last label.)"""
+    
+    # Sample floor layout
+    if sampling_rule == "random":
+        sampled_indices = np.random.choice(len(encoded_dataset), num_syn_scenes).tolist()
+    elif sampling_rule == "uniform":
+        sampled_indices = np.arange(len(encoded_dataset)).tolist() * \
+            (num_syn_scenes // len(encoded_dataset))
+        sampled_indices += \
+            np.random.choice(len(encoded_dataset), 
+                             num_syn_scenes - len(sampled_indices)).tolist()
+    else:
+        raise NotImplemented
+    
+    # network params
+    with_room_mask = config["network"].get("room_mask_condition", True)
     print("Floor condition: {}.".format(with_room_mask))
+    feature_mask = get_feature_mask(network, experiment, num_known_objects, device)
     
     # Generate layouts
     network.to(device)
