@@ -344,12 +344,12 @@ class GaussianDiffusion(BaseDiffusion):
             return sample
 
     def p_sample_loop(self, denoise_fn, x_end, condition, condition_cross,
-                      sample_freq=None, clip_denoised=True):
+                      x_target_fn=lambda x: x, log_freq=None, clip_denoised=True):
         """
         Generate samples through iterative denoising.
         """
         B = x_end.shape[0]
-        if sample_freq:
+        if log_freq:
             x_traj = [x_end]
         
         x_t = x_end
@@ -360,11 +360,12 @@ class GaussianDiffusion(BaseDiffusion):
                 denoise_fn=denoise_fn, x_t=x_t, t=t_, condition=condition, 
                 condition_cross=condition_cross, clip_denoised=clip_denoised
             )
+            x_t = x_target_fn(x_t)
 
-            if sample_freq and t % sample_freq == 0:
+            if log_freq and t % log_freq == 0:
                 x_traj.append(x_t)
 
-        if sample_freq:
+        if log_freq:
             return x_traj
         else:
             return x_t
@@ -564,14 +565,22 @@ class DiffusionPoint(nn.Module):
         self.model = denoise_net
     
     def _denoise(self, data, t, condition, condition_cross):
-        B, D, N = data.shape
+        B, N, D = data.shape
         assert data.dtype == torch.float
         assert t.shape == torch.Size([B]) and t.dtype == torch.int64
 
-        out = self.model(data, t, condition, condition_cross)
-        assert out.shape == torch.Size([B, D, N])
-
-        return out
+        denoising_channels = getattr(self.model, "channels", D)
+        if D != denoising_channels:
+            class_dim = denoising_channels - D
+            out = self.model(
+                torch.cat([data, condition[..., :class_dim]], dim=-1), t,
+                condition[..., class_dim:], condition_cross
+            )
+            return out[..., :D]
+        else:
+            out = self.model(data, t, condition, condition_cross)
+            assert out.shape == torch.Size([B, N, D])
+            return out
 
     def get_loss_iter(self, data, noise=None, condition=None, 
                       condition_cross=None):
@@ -586,12 +595,18 @@ class DiffusionPoint(nn.Module):
         return losses, loss_dict
     
     def gen_samples(self, shape, device, condition=None, condition_cross=None,
-                    freq=None, clip_denoised=False):
+                    target_data=None, target_mask=None, freq=None, clip_denoised=False):
         self.diffusion._move_tensors(device)
-        x_end = torch.randn(size=shape, dtype=torch.float, device=device)
+
+        if target_data is not None:
+            assert target_mask is not None
+            target_fn = lambda x: x * (~target_mask) + target_data * target_mask
+        else:
+            target_fn = lambda x: x
         
+        x_end = torch.randn(size=shape, dtype=torch.float, device=device)
         return self.diffusion.p_sample_loop(
-            self._denoise, x_end=x_end,
+            self._denoise, x_end=x_end, x_target_fn=target_fn,
             condition=condition, condition_cross=condition_cross,
-            sample_freq=freq, clip_denoised=clip_denoised
+            log_freq=freq, clip_denoised=clip_denoised
         )

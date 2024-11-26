@@ -7,10 +7,6 @@ import os
 import math
 import torch
 from torch.nn.utils import clip_grad_norm_
-try:
-    from radam import RAdam
-except ImportError:
-    pass
 
 from .feature_extractors import get_feature_extractor
 from .diffusion_scene_layout_ddpm import DiffusionSceneLayout_DDPM
@@ -35,7 +31,7 @@ def optimizer_factory(config, parameters):
     elif optimizer == "Adam":
         return torch.optim.Adam(parameters, lr=lr, weight_decay=weight_decay)
     elif optimizer == "RAdam":
-        return RAdam(parameters, lr=lr, weight_decay=weight_decay)
+        return torch.optim.RAdam(parameters, lr=lr, weight_decay=weight_decay)
     else:
         raise NotImplementedError()
 

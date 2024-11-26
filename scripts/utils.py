@@ -39,7 +39,7 @@ def id_generator(size=6, chars=string.ascii_uppercase + string.digits):
     return ''.join(random.choice(chars) for _ in range(size))
 
 
-def save_experiment_params(args, experiment_tag, directory):
+def save_experiment_params(args, experiment_tag, path_to_params):
     t = vars(args)
     params = {k: str(v) for k, v in t.items()}
 
@@ -65,7 +65,7 @@ def save_experiment_params(args, experiment_tag, directory):
     if hasattr(args, "config_file"):
         config = load_config(args.config_file)
         params.update(config)
-    with open(os.path.join(directory, "params.json"), "w") as f:
+    with open(path_to_params, "w") as f:
         json.dump(params, f, indent=4)
 
 
@@ -90,17 +90,17 @@ def load_checkpoints(model, optimizer, experiment_directory, args, device):
         if f.startswith("model_")
     ]
     if len(model_files) == 0:
-        return
+        return None
     ids = [int(f[6:]) for f in model_files]
     max_id = max(ids)
     model_path = os.path.join(
-        experiment_directory, "model_{:05d}"
-    ).format(max_id)
+        experiment_directory, "model_{:05d}".format(max_id)
+    )
     opt_path = os.path.join(
-        experiment_directory, "opt_{:05d}"
-    ).format(max_id)
+        experiment_directory, "opt_{:05d}".format(max_id)
+    )
     if not (os.path.exists(model_path) and os.path.exists(opt_path)):
-        return
+        return None
 
     print("Loading model checkpoint from {}".format(model_path))
     model.load_state_dict(torch.load(model_path, map_location=device))
@@ -109,6 +109,13 @@ def load_checkpoints(model, optimizer, experiment_directory, args, device):
         torch.load(opt_path, map_location=device)
     )
     args.continue_from_epoch = max_id
+
+    params_path = os.path.join(experiment_directory, "params.json")
+    if os.path.exists(params_path) and args.with_wandb_logger:
+        wandb_id = json.load(open(params_path, "r")).get("with_wandb_logger")
+        return wandb_id
+    else:
+        return None
 
 
 def save_checkpoints(epoch, model, optimizer, experiment_directory):

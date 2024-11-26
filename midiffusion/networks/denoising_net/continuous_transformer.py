@@ -3,6 +3,8 @@ from .transformer_utils import DenoiseTransformer
 
 
 class ContinuousDenoiseTransformer(DenoiseTransformer):
+    """Continuous denoising transformer network where all object properties are 
+    treated as continuous"""
     def __init__(
         self,
         network_dim,

@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.utils.data
 import torch.nn.functional as F
 from .diffusion_base import BaseDiffusion, EPS_PROB, LOG_ZERO
+from .denoising_net.mixed_transformer import MixedDenoiseTransformer
 
 
 '''
@@ -220,13 +221,10 @@ class MaskAndReplaceDiffusion(BaseDiffusion):
     def predict_denoise(self, denoise_fn, log_x_t, t, condition=None, 
                         condition_cross=None):
         """
-        compute denoise_fn(x_t, t, context, context_cross) and convert output to log prob
+        compute denoise_fn(data, t, condition, condition_cross) and convert output to log prob
         """
         x_t = log_onehot_to_index(log_x_t)  # (B, N)
-
-        out = denoise_fn(
-            x_t, t, context=condition, context_cross=condition_cross
-        )
+        out = denoise_fn(x_t, t, condition, condition_cross)
         log_pred = self.log_pred_from_denoise_out(out)
         assert log_pred.shape == log_x_t.shape
 
@@ -439,15 +437,21 @@ class DiscreteDiffusionPoint(nn.Module):
             mask_weight, auxiliary_loss_weight, adaptive_auxiliary_loss
         )
         self.model = denoise_net
-        assert self.diffusion.num_classes - 1 == self.model.num_classes
+        assert self.diffusion.num_classes - 1 == self.model.class_dim
 
-    def _denoise(self, data, t, condition):
+    def _denoise(self, data, t, condition, condition_cross=None):
         B, N = data.shape
         C = self.diffusion.num_classes - 1
         assert t.shape == torch.Size([B]) and t.dtype == torch.int64
-
-        out = self.model(data, t, condition)
-        assert out.shape == torch.Size([B, C, N])
+        
+        if isinstance(self.model, MixedDenoiseTransformer):
+            out, _ = self.model(
+                x_semantic=data, x_geometry=None, time=t, 
+                context=condition, context_cross=condition_cross
+            )
+        else:
+            out = self.model(data, t, condition)
+        assert out.shape == torch.Size([B, N, C]), f"Error: {out.shape} != {B, N, C}"
         return out
 
     def get_loss_iter(self, data, condition=None):
@@ -465,7 +469,7 @@ class DiscreteDiffusionPoint(nn.Module):
         B, N = shape
         self.diffusion._move_tensors(device)
         
-        log_zeros = torch.full((B, self.num_classes-1, N), LOG_ZERO, device=device)
+        log_zeros = torch.full((B, self.diffusion.num_classes-1, N), LOG_ZERO, device=device)
         log_ones = torch.zeros((B, 1, N), device=device)
         log_x_end = torch.cat((log_zeros, log_ones), dim=1)
 

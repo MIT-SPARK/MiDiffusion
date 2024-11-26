@@ -90,25 +90,23 @@ def main(argv):
         device = torch.device("cpu")
     print("Running code on", device)
 
-    # Check if output directory exists and if it doesn't create it
-    if not os.path.exists(args.output_directory):
-        os.makedirs(args.output_directory)
-
     # Create an experiment directory using the experiment_tag
     if args.experiment_tag is None:
         experiment_tag = id_generator(9)
     else:
         experiment_tag = args.experiment_tag
-
     experiment_directory = os.path.join(args.output_directory, experiment_tag)
-    if not os.path.exists(experiment_directory):
-        os.makedirs(experiment_directory)
+    os.makedirs(experiment_directory, exist_ok=True)
+    # output files
+    path_to_config = os.path.join(experiment_directory, "config.yaml")
+    path_to_bounds = os.path.join(experiment_directory, "bounds.npz")
+    path_to_params = os.path.join(experiment_directory, "params.json")
+    path_to_stats = os.path.join(experiment_directory, "stats.txt")
+    path_to_best_model = os.path.join(experiment_directory, "best_model.pt")
 
     # Parse the config file
     config = load_config(args.config_file)
-    shutil.copyfile(
-        args.config_file, os.path.join(experiment_directory, "config.yaml")
-    )
+    shutil.copyfile(args.config_file, path_to_config)
 
     train_dataset = get_encoded_dataset(
         update_data_file_paths(config["data"]),
@@ -121,7 +119,6 @@ def main(argv):
     )
     # Compute the bounds for this experiment, save them to a file in the
     # experiment directory and pass them to the validation dataset
-    path_to_bounds = os.path.join(experiment_directory, "bounds.npz")
     np.savez(
         path_to_bounds,
         sizes=train_dataset.bounds["sizes"],
@@ -130,7 +127,6 @@ def main(argv):
         #add objfeats
         objfeats=train_dataset.bounds["objfeats"],
     )
-    print("Saved the dataset bounds in {}".format(path_to_bounds))
 
     validation_dataset = get_encoded_dataset(
         update_data_file_paths(config["data"]),
@@ -149,11 +145,6 @@ def main(argv):
         collate_fn=train_dataset.collate_fn,
         shuffle=True
     )
-    print("Loaded {} training scenes with {} object types".format(
-        len(train_dataset), train_dataset.n_object_types)
-    )
-    print("Training set has {} bounds".format(list(train_dataset.bounds.keys())))
-
     val_loader = DataLoader(
         validation_dataset,
         batch_size=config["validation"].get("batch_size", 1),
@@ -161,14 +152,17 @@ def main(argv):
         collate_fn=validation_dataset.collate_fn,
         shuffle=False
     )
-    print("Loaded {} validation scenes with {} object types".format(
-        len(validation_dataset), validation_dataset.n_object_types)
-    )
-    print("Validation set has {} bounds".format(list(validation_dataset.bounds.keys())))
 
     # Make sure that the train_dataset and the validation_dataset have the same
     # number of object categories
     assert train_dataset.object_types == validation_dataset.object_types
+    print("Saved dataset bounds to {}".format(path_to_bounds))
+    print("  Loaded {} training scenes with {} object types".format(
+        len(train_dataset), train_dataset.n_object_types)
+    )
+    print("  Loaded {} validation scenes with {} object types".format(
+        len(validation_dataset), validation_dataset.n_object_types)
+    )
 
     # Build the network architecture to be used for training
     network, train_on_batch, validate_on_batch = build_network(
@@ -184,10 +178,15 @@ def main(argv):
     # Build an optimizer object to compute the gradients of the parameters
     optimizer = optimizer_factory(config["training"], \
         filter(lambda p: p.requires_grad, network.parameters())) 
-    # optimizer = optimizer_factory(config["training"], network.parameters() )
 
     # Load the checkpoints if they exist in the experiment directory
-    load_checkpoints(network, optimizer, experiment_directory, args, device)
+    wandb_id = load_checkpoints(
+        network, optimizer, experiment_directory, args, device
+    )
+    epochs = config["training"].get("epochs", 150)
+    if args.continue_from_epoch == epochs:
+        return
+
     # Load the learning rate scheduler 
     lr_scheduler = schedule_factory(config["training"])
 
@@ -199,21 +198,19 @@ def main(argv):
             project=config["logger"].get("project", "MiDiffusion"),
             name=experiment_tag,
             watch=False,
-            log_frequency=10
+            log_frequency=10,
+            id=wandb_id,
         )
         args.with_wandb_logger = WandB.instance().id
 
     # Log the stats to a file
-    StatsLogger.instance().add_output_file(open(
-        os.path.join(experiment_directory, "stats.txt"), "w"
-    ))
+    StatsLogger.instance().add_output_file(open(path_to_stats, "w"))
 
     # Save the parameters of this run to a file
-    save_experiment_params(args, experiment_tag, experiment_directory)
+    save_experiment_params(args, experiment_tag, path_to_params)
     print("Save experiment statistics in {}".format(experiment_directory))
 
     # Do the training
-    epochs = config["training"].get("epochs", 150)
     max_grad_norm = config["training"].get("max_grad_norm", None)
     save_every = config["training"].get("save_frequency", 10)
     val_every = config["validation"].get("frequency", 100)
@@ -265,12 +262,10 @@ def main(argv):
                 # Overwrite best_model.pt
                 min_val_loss = val_loss_total
                 min_val_loss_epoch = i
-                torch.save(network.state_dict(),
-                           os.path.join(experiment_directory, "best_model.pt"))
+                torch.save(network.state_dict(), path_to_best_model)
             
     print("Best model saved at epcho {} with validation loss = {}".format(
-        min_val_loss_epoch, min_val_loss), 
-        file=open(os.path.join(experiment_directory, "stats.txt"), "a")
+        min_val_loss_epoch, min_val_loss), file=open(path_to_stats, "a")
     )
 
 

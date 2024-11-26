@@ -4,6 +4,9 @@ from .transformer_utils import DenoiseTransformer
 
 
 class MixedDenoiseTransformer(DenoiseTransformer):
+    """Mixed denoising transformer network where class labels are treated as 
+    discrete variables and (optional) geometric features are treated as 
+    continuous variables."""
     def __init__(
         self,
         network_dim,
@@ -63,27 +66,31 @@ class MixedDenoiseTransformer(DenoiseTransformer):
         # geometric features
         self.seperate_all = seperate_all
         if self.seperate_all:
-            self.bbox_embedf = self._encoder_mlp(feat_embd, self.bbox_dim)
-            self.bbox_hidden2output = self._decoder_mlp(decode_embd, self.bbox_dim)            
+            if self.bbox_dim > 0:
+                self.bbox_embedf = self._encoder_mlp(feat_embd, self.bbox_dim)
+                self.bbox_hidden2output = self._decoder_mlp(decode_embd, self.bbox_dim)            
             if self.objectness_dim > 0:
                 self.objectness_embedf = self._encoder_mlp(feat_embd, self.objectness_dim)
                 self.objectness_hidden2output = self._decoder_mlp(decode_embd, self.objectness_dim)
             if self.objfeat_dim > 0:
                 self.objfeat_embedf = self._encoder_mlp(feat_embd, self.objfeat_dim)
                 self.objfeat_hidden2output = self._decoder_mlp(decode_embd, self.objfeat_dim)
-        else:
+        elif self.geo_dim > 0:
             self.init_mlp = self._encoder_mlp(geo_embd, self.geo_dim)
             self.geo_hidden2output = self._decoder_mlp(decode_embd, self.geo_dim)
     
     def forward(self, x_semantic, x_geometry, time, context=None, context_cross=None): 
-        # x: (B, N, C)
+        B, N = x_semantic.shape
         if context_cross is not None:
             raise NotImplemented    # TODO
 
         # initial processing
         x_class = self.class_emb(x_semantic)
         if self.seperate_all:
-            x_geo = self.bbox_embedf(x_geometry[:, :, 0:self.bbox_dim])
+            if self.bbox_dim > 0:
+                x_geo = self.bbox_embedf(x_geometry[:, :, 0:self.bbox_dim])
+            else:
+                x_geo = torch.empty(size=(B, N, 0), device=x_semantic.device)
             if self.objectness_dim > 0:
                 start_index = self.bbox_dim
                 x_object = self.objectness_embedf(
@@ -102,13 +109,16 @@ class MixedDenoiseTransformer(DenoiseTransformer):
                     x_geo = torch.cat([x_geo, x_objfeat], dim=2).contiguous()
                 else:
                     x_geo += x_objfeat
-        else:
-            x_geo = self.init_mlp(x_geometry)
+        elif self.geo_dim > 0:
+            x_geo = self.init_mlp(x_geometry)  
         
-        if self.concate_features:
-            x = torch.cat([x_class, x_geo], dim=2).contiguous()
+        if self.geo_dim > 0: 
+            if self.concate_features:
+                x = torch.cat([x_class, x_geo], dim=2).contiguous()
+            else:
+                x = x_class + x_geo
         else:
-            x = x_class + x_geo
+            x = x_class
 
         # transformer
         for block_idx in range(len(self.tf_blocks)):
@@ -119,14 +129,19 @@ class MixedDenoiseTransformer(DenoiseTransformer):
         if self.concate_features:
             x = torch.cat([x, out_class], dim=2).contiguous()
         if self.seperate_all:
-            out  = self.bbox_hidden2output(x)
+            if self.bbox_dim > 0:
+                out  = self.bbox_hidden2output(x)
+            else:
+                out = torch.empty(size=(B, N, 0), device=x.device)
             if self.objectness_dim > 0:
                 out_object = self.objectness_hidden2output(x)
                 out = torch.cat([out, out_object], dim=2).contiguous()
             if self.objfeat_dim > 0:
                 out_objfeat = self.objfeat_hidden2output(x)
                 out = torch.cat([out, out_objfeat], dim=2).contiguous()
-        else:
+        elif self.geo_dim > 0:
             out = self.geo_hidden2output(x)
+        else:
+            out = None
         
         return out_class, out

@@ -19,9 +19,8 @@ network:
     room_latent_dim: 64
     
     # position condition
-    learnable_embedding: true
-    position_condition: true
-    position_emb_dim: 64
+    position_condition: false
+    position_emb_dim: 0
 
     # diffusion config
     time_num: 1000
@@ -48,7 +47,7 @@ network:
         seperate_all: True
         n_layer: 8
         n_embd: 512
-        n_head: 8
+        n_head: 4
         dim_feedforward: 2048
         dropout: 0.1
         activate: 'GELU'
@@ -62,7 +61,7 @@ feature_extractor:
 training:
     splits: ["train", "val"]
     epochs: 100000
-    batch_size: 128
+    batch_size: 512
     save_frequency: 2000
     max_grad_norm: 10
     # optimizer
@@ -77,8 +76,7 @@ training:
 validation:
     splits: ["test"]
     frequency: 100
-    save_frequency: 1000
-    batch_size: 128
+    batch_size: 512
 
 logger:
     type: "wandb"

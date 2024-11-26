@@ -123,13 +123,13 @@ class DiffusionSceneLayout_DDPM(Module):
 
         # get desired diffusion target
         room_layout_target = \
-            torch.cat([translations, sizes, angles, class_labels], dim=-1).contiguous()
+            torch.cat([translations, sizes, angles, class_labels], dim=-1)
         if self.objectness_dim > 0:
             room_layout_target = \
-                torch.cat([room_layout_target, objectness], dim=-1).contiguous() 
+                torch.cat([room_layout_target, objectness], dim=-1)
         if self.objfeat_dim > 0:
             room_layout_target = \
-                torch.cat([room_layout_target, objfeats], dim=-1).contiguous() 
+                torch.cat([room_layout_target, objfeats], dim=-1)
         
         return room_layout_target
     
